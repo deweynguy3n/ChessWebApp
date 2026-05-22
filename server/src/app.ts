@@ -90,7 +90,11 @@ export function buildApp(repository: GameRepository): FastifyInstance {
 
     socket.on("close", async () => {
       connections.delete(connection);
-      await broadcastSnapshots(gameId);
+      try {
+        await broadcastSnapshots(gameId);
+      } catch (error) {
+        app.log.warn({ error, gameId }, "Could not broadcast snapshots after socket close.");
+      }
     });
 
     void initializeConnection();
