@@ -249,20 +249,55 @@ h1 {
 }
 
 .piece {
-  font-family: "Times New Roman", serif;
-  font-size: clamp(1.85rem, 8cqw, 4.8rem);
+  display: grid;
+  height: 82%;
   line-height: 1;
+  place-items: center;
+  width: 82%;
   z-index: 1;
+}
+
+.piece-icon {
+  color: currentColor;
+  display: block;
+  filter: drop-shadow(0 2px 2px var(--piece-shadow));
+  height: 100%;
+  overflow: visible;
+  width: 100%;
+}
+
+.piece-fill {
+  fill: currentColor;
+  stroke: var(--piece-outline);
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+
+.piece-line,
+.piece-cutout {
+  fill: none;
+  stroke: var(--piece-detail);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.piece-dot {
+  fill: var(--piece-detail);
 }
 
 .white-piece {
   color: #ffffff;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.42);
+  --piece-detail: rgba(33, 38, 43, 0.5);
+  --piece-outline: rgba(33, 38, 43, 0.34);
+  --piece-shadow: rgba(0, 0, 0, 0.28);
 }
 
 .black-piece {
   color: #1f2428;
-  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.3);
+  --piece-detail: rgba(255, 255, 255, 0.5);
+  --piece-outline: rgba(255, 255, 255, 0.2);
+  --piece-shadow: rgba(255, 255, 255, 0.2);
 }
 
 .coord {
@@ -343,7 +378,22 @@ h1 {
 }
 
 .captured p {
+  align-items: center;
+  display: flex;
+  gap: 6px;
   margin: 6px 0;
+}
+
+.captured-pieces {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.captured-pieces .piece-icon {
+  height: 24px;
+  width: 24px;
 }
 
 .error {
@@ -384,9 +434,14 @@ h1 {
 }
 
 .promotion-options button {
+  display: grid;
+  place-items: center;
   min-height: 72px;
-  font-family: "Times New Roman", serif;
-  font-size: 2.3rem;
+}
+
+.promotion-options .piece-icon {
+  height: 46px;
+  width: 46px;
 }
 
 @media (max-width: 920px) {

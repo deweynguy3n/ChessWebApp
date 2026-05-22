@@ -1,21 +1,6 @@
 import { Chess, type Square } from "chess.js";
 import type { GameSnapshot, PromotionPiece, Seat } from "@chesswebapp/shared";
 
-export const pieceSymbols: Record<string, string> = {
-  wp: "♟",
-  wn: "♞",
-  wb: "♝",
-  wr: "♜",
-  wq: "♛",
-  wk: "♚",
-  bp: "♟",
-  bn: "♞",
-  bb: "♝",
-  br: "♜",
-  bq: "♛",
-  bk: "♚"
-};
-
 export const promotionPieces: PromotionPiece[] = ["q", "r", "b", "n"];
 
 export function getBoard(snapshot: GameSnapshot, perspective: Seat | "spectator") {

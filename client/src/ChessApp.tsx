@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameSnapshot, PromotionPiece, Seat, ServerWsMessage } from "@chesswebapp/shared";
 import { createGame, fetchGame, joinGame, resignGame } from "./api";
-import { clockText, getBoard, isPromotionMove, legalTargets, pieceSymbols, playerName, promotionPieces, squareName, statusText } from "./chessUi";
+import { clockText, getBoard, isPromotionMove, legalTargets, playerName, promotionPieces, squareName, statusText } from "./chessUi";
+import { PieceIcon } from "./PieceIcon";
 import { loadSeat, saveSeat, type StoredSeat } from "./storage";
 import type { Square } from "chess.js";
 
@@ -227,7 +228,11 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
                   onClick={() => selectSquare(square)}
                   aria-label={square}
                 >
-                  {piece ? <span className={`piece ${piece.color === "w" ? "white-piece" : "black-piece"}`}>{pieceSymbols[piece.color + piece.type]}</span> : null}
+                  {piece ? (
+                    <span className="piece">
+                      <PieceIcon color={piece.color} type={piece.type} />
+                    </span>
+                  ) : null}
                   <span className="coord">{square}</span>
                 </button>
               );
@@ -258,8 +263,8 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
 
           <div className="panel-section captured">
             <h2>Captured</h2>
-            <p>White: {snapshot.captured.white.map((piece) => pieceSymbols["w" + piece]).join(" ") || "None"}</p>
-            <p>Black: {snapshot.captured.black.map((piece) => pieceSymbols["b" + piece]).join(" ") || "None"}</p>
+            <CapturedPieces pieces={snapshot.captured.white} color="w" label="White" />
+            <CapturedPieces pieces={snapshot.captured.black} color="b" label="Black" />
           </div>
 
           <div className="panel-section moves">
@@ -290,7 +295,7 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
             <div className="promotion-options">
               {promotionPieces.map((piece) => (
                 <button key={piece} onClick={() => sendMove(pendingPromotion.from, pendingPromotion.to, piece)}>
-                  {pieceSymbols[(seat === "black" ? "b" : "w") + piece]}
+                  <PieceIcon color={seat === "black" ? "b" : "w"} type={piece} label={`Promote to ${piece}`} />
                 </button>
               ))}
             </div>
@@ -298,6 +303,23 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
         </div>
       ) : null}
     </main>
+  );
+}
+
+function CapturedPieces({ color, label, pieces }: { color: "w" | "b"; label: string; pieces: string[] }) {
+  return (
+    <p>
+      {label}:{" "}
+      {pieces.length > 0 ? (
+        <span className="captured-pieces">
+          {pieces.map((piece, index) => (
+            <PieceIcon key={`${piece}-${index}`} color={color} type={piece as PromotionPiece} />
+          ))}
+        </span>
+      ) : (
+        "None"
+      )}
+    </p>
   );
 }
 
