@@ -7,6 +7,10 @@ export interface StoredGame {
   pgn: string;
   turn: Seat;
   result: GameResult;
+  timeControlSeconds: number | null;
+  whiteMsRemaining: number | null;
+  blackMsRemaining: number | null;
+  turnStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +49,9 @@ export interface PersistMoveInput {
   turn: Seat;
   status: GameStatus;
   result: GameResult;
+  whiteMsRemaining: number | null;
+  blackMsRemaining: number | null;
+  turnStartedAt: string | null;
 }
 
 export interface GameRepository {
@@ -52,5 +59,5 @@ export interface GameRepository {
   getGame(gameId: string): Promise<GameRecord | null>;
   joinGame(input: JoinGameInput): Promise<GameRecord>;
   persistMove(input: PersistMoveInput): Promise<GameRecord>;
-  resignGame(gameId: string, status: GameStatus, result: GameResult): Promise<GameRecord>;
+  finishGame(gameId: string, status: GameStatus, result: GameResult): Promise<GameRecord>;
 }

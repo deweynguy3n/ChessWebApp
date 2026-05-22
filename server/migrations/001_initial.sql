@@ -5,6 +5,10 @@ CREATE TABLE IF NOT EXISTS games (
   pgn TEXT NOT NULL DEFAULT '',
   turn TEXT NOT NULL,
   result TEXT,
+  time_control_seconds INTEGER,
+  white_ms_remaining INTEGER,
+  black_ms_remaining INTEGER,
+  turn_started_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

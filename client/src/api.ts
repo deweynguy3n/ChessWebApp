@@ -2,11 +2,11 @@ import type { CreateGameResponse, GameSnapshot, JoinGameResponse } from "@chessw
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
-export async function createGame(displayName: string): Promise<CreateGameResponse> {
+export async function createGame(displayName: string, timeControlSeconds?: number | null): Promise<CreateGameResponse> {
   const response = await fetch("/api/games", {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify({ displayName })
+    body: JSON.stringify({ displayName, timeControlSeconds })
   });
   return readJson(response);
 }

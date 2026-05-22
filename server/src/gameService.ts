@@ -13,7 +13,8 @@ import type {
 import { createId, createPlayerToken, hashToken } from "./ids.js";
 import type { GameRecord, GameRepository, StoredPlayer } from "./repository.js";
 
-const FINISHED_STATUSES = new Set<GameStatus>(["checkmate", "stalemate", "draw", "resigned"]);
+const FINISHED_STATUSES = new Set<GameStatus>(["checkmate", "stalemate", "draw", "resigned", "timeout"]);
+const ONE_MINUTE_SECONDS = 60;
 
 export interface MoveResult {
   snapshot: GameSnapshot;
@@ -23,11 +24,13 @@ export interface MoveResult {
 export class GameService {
   constructor(private readonly repository: GameRepository) {}
 
-  async createGame(displayName: string): Promise<CreateGameResponse> {
+  async createGame(displayName: string, timeControlSeconds?: number | null): Promise<CreateGameResponse> {
     const now = new Date().toISOString();
     const chess = new Chess();
     const gameId = createId("game");
     const token = createPlayerToken();
+    const normalizedTimeControl = normalizeTimeControl(timeControlSeconds);
+    const startingClock = normalizedTimeControl ? normalizedTimeControl * 1000 : null;
     const record = await this.repository.createGame({
       game: {
         id: gameId,
@@ -36,6 +39,10 @@ export class GameService {
         pgn: chess.pgn(),
         turn: "white",
         result: null,
+        timeControlSeconds: normalizedTimeControl,
+        whiteMsRemaining: startingClock,
+        blackMsRemaining: startingClock,
+        turnStartedAt: null,
         createdAt: now,
         updatedAt: now
       },
@@ -75,7 +82,7 @@ export class GameService {
   }
 
   async getSnapshot(gameId: string, connectedSeats = new Set<Seat>()): Promise<GameSnapshot> {
-    const record = await this.getRequiredRecord(gameId);
+    const record = await this.expireIfFlagged(await this.getRequiredRecord(gameId));
     return toSnapshot(record, connectedSeats);
   }
 
@@ -83,14 +90,14 @@ export class GameService {
     if (!token) {
       return "spectator";
     }
-    const record = await this.getRequiredRecord(gameId);
+    const record = await this.expireIfFlagged(await this.getRequiredRecord(gameId));
     const tokenHash = hashToken(token);
     const player = record.players.find((candidate) => candidate.tokenHash === tokenHash);
     return player?.seat ?? "spectator";
   }
 
   async submitMove(gameId: string, token: string | undefined, from: string, to: string, promotion?: PromotionPiece): Promise<MoveResult> {
-    const record = await this.getRequiredRecord(gameId);
+    const record = await this.expireIfFlagged(await this.getRequiredRecord(gameId));
     const seat = await this.getSeatForToken(gameId, token);
     if (seat === "spectator") {
       throw new ClientError(403, "Spectators cannot move pieces.");
@@ -113,6 +120,8 @@ export class GameService {
 
     const status = getStatus(chess);
     const result = getResult(chess, status, seat);
+    const now = new Date();
+    const clocks = applyElapsed(record, seat, now);
     const summary: MoveSummary = {
       id: createId("move"),
       moveNumber: Math.floor(record.moves.length / 2) + 1,
@@ -122,7 +131,7 @@ export class GameService {
       promotion: promotion ?? null,
       san: move.san,
       fenAfter: chess.fen(),
-      createdAt: new Date().toISOString()
+      createdAt: now.toISOString()
     };
 
     const updated = await this.repository.persistMove({
@@ -132,7 +141,10 @@ export class GameService {
       pgn: chess.pgn(),
       turn: chess.turn() === "w" ? "white" : "black",
       status,
-      result
+      result,
+      whiteMsRemaining: clocks.white,
+      blackMsRemaining: clocks.black,
+      turnStartedAt: status === "active" ? now.toISOString() : null
     });
 
     return { snapshot: toSnapshot(updated), move: summary };
@@ -148,8 +160,13 @@ export class GameService {
       throw new ClientError(409, "This game is already finished.");
     }
     const result: GameResult = seat === "white" ? "0-1" : "1-0";
-    const updated = await this.repository.resignGame(gameId, "resigned", result);
+    const updated = await this.repository.finishGame(gameId, "resigned", result);
     return toSnapshot(updated);
+  }
+
+  async timeout(gameId: string): Promise<GameSnapshot | null> {
+    const record = await this.expireIfFlagged(await this.getRequiredRecord(gameId));
+    return record.game.status === "timeout" ? toSnapshot(record) : null;
   }
 
   private async getRequiredRecord(gameId: string): Promise<GameRecord> {
@@ -158,6 +175,20 @@ export class GameService {
       throw new ClientError(404, "Game not found.");
     }
     return record;
+  }
+
+  private async expireIfFlagged(record: GameRecord): Promise<GameRecord> {
+    if (record.game.status !== "active" || !record.game.timeControlSeconds || !record.game.turnStartedAt) {
+      return record;
+    }
+
+    const clocks = liveClocks(record, new Date());
+    const timedOutSeat = clocks[record.game.turn] <= 0 ? record.game.turn : null;
+    if (!timedOutSeat) {
+      return record;
+    }
+
+    return this.repository.finishGame(record.game.id, "timeout", timedOutSeat === "white" ? "0-1" : "1-0");
   }
 }
 
@@ -192,6 +223,13 @@ function cleanDisplayName(displayName: string): string {
   return cleaned;
 }
 
+function normalizeTimeControl(timeControlSeconds?: number | null): number | null {
+  if (!timeControlSeconds) {
+    return null;
+  }
+  return timeControlSeconds === ONE_MINUTE_SECONDS ? ONE_MINUTE_SECONDS : null;
+}
+
 function getStatus(chess: Chess): GameStatus {
   if (chess.isCheckmate()) return "checkmate";
   if (chess.isStalemate()) return "stalemate";
@@ -210,6 +248,7 @@ function getResult(chess: Chess, status: GameStatus, mover: Seat): GameResult {
 }
 
 function toSnapshot(record: GameRecord, connectedSeats = new Set<Seat>()): GameSnapshot {
+  const clocks = liveClocks(record, new Date());
   return {
     id: record.game.id,
     status: record.game.status,
@@ -217,6 +256,12 @@ function toSnapshot(record: GameRecord, connectedSeats = new Set<Seat>()): GameS
     pgn: record.game.pgn,
     turn: record.game.turn,
     result: record.game.result,
+    timeControlSeconds: record.game.timeControlSeconds,
+    clocks: {
+      white: record.game.timeControlSeconds ? Math.max(0, clocks.white) : null,
+      black: record.game.timeControlSeconds ? Math.max(0, clocks.black) : null
+    },
+    turnStartedAt: record.game.turnStartedAt,
     players: record.players.map((player) => ({
       seat: player.seat,
       displayName: player.displayName,
@@ -226,6 +271,27 @@ function toSnapshot(record: GameRecord, connectedSeats = new Set<Seat>()): GameS
     captured: getCapturedPieces(record.game.fen),
     createdAt: record.game.createdAt,
     updatedAt: record.game.updatedAt
+  };
+}
+
+function liveClocks(record: GameRecord, now: Date): Record<Seat, number> {
+  const white = record.game.whiteMsRemaining ?? 0;
+  const black = record.game.blackMsRemaining ?? 0;
+  if (record.game.status !== "active" || !record.game.turnStartedAt || !record.game.timeControlSeconds) {
+    return { white, black };
+  }
+
+  const elapsed = Math.max(0, now.getTime() - new Date(record.game.turnStartedAt).getTime());
+  return record.game.turn === "white"
+    ? { white: white - elapsed, black }
+    : { white, black: black - elapsed };
+}
+
+function applyElapsed(record: GameRecord, mover: Seat, now: Date): Record<Seat, number> {
+  const clocks = liveClocks(record, now);
+  return {
+    white: mover === "white" ? Math.max(0, clocks.white) : clocks.white,
+    black: mover === "black" ? Math.max(0, clocks.black) : clocks.black
   };
 }
 

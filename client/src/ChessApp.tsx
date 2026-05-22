@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameSnapshot, PromotionPiece, Seat, ServerWsMessage } from "@chesswebapp/shared";
 import { createGame, fetchGame, joinGame, resignGame } from "./api";
-import { getBoard, isPromotionMove, legalTargets, pieceSymbols, playerName, promotionPieces, squareName, statusText } from "./chessUi";
-import { loadSeat, saveSeat } from "./storage";
+import { clockText, getBoard, isPromotionMove, legalTargets, pieceSymbols, playerName, promotionPieces, squareName, statusText } from "./chessUi";
+import { loadSeat, saveSeat, type StoredSeat } from "./storage";
 import type { Square } from "chess.js";
 
 type Route = { page: "home" } | { page: "game"; gameId: string };
@@ -31,6 +31,7 @@ export function ChessApp() {
 
 function Home({ onNavigate }: { onNavigate: (path: string) => void }) {
   const [displayName, setDisplayName] = useState("");
+  const [timedMode, setTimedMode] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -39,7 +40,7 @@ function Home({ onNavigate }: { onNavigate: (path: string) => void }) {
     setBusy(true);
     setError("");
     try {
-      const created = await createGame(displayName);
+      const created = await createGame(displayName, timedMode ? 60 : null);
       saveSeat(created.gameId, created.seat, created.playerToken);
       onNavigate(playerGamePath(created.gameId, created.seat, created.playerToken));
     } catch (error) {
@@ -61,6 +62,10 @@ function Home({ onNavigate }: { onNavigate: (path: string) => void }) {
             <input id="displayName" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ada" maxLength={32} />
             <button disabled={busy}>{busy ? "Creating" : "Create game"}</button>
           </div>
+          <label className="toggle-row">
+            <input type="checkbox" checked={timedMode} onChange={(event) => setTimedMode(event.target.checked)} />
+            <span>1 minute timed mode</span>
+          </label>
           {error ? <p className="error">{error}</p> : null}
         </form>
       </section>
@@ -69,24 +74,31 @@ function Home({ onNavigate }: { onNavigate: (path: string) => void }) {
 }
 
 function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: string) => void }) {
-  const storedSeat = useMemo(() => loadSeat(gameId), [gameId]);
+  const [identity, setIdentity] = useState<StoredSeat | null>(() => loadSeat(gameId));
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
-  const [seat, setSeat] = useState<Seat | "spectator">(storedSeat?.seat ?? "spectator");
+  const [seat, setSeat] = useState<Seat | "spectator">(identity?.seat ?? "spectator");
   const [joinName, setJoinName] = useState("");
   const [selected, setSelected] = useState<Square | null>(null);
   const [targets, setTargets] = useState<Square[]>([]);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const socketRef = useRef<WebSocket | null>(null);
   const inviteUrl = `${window.location.origin}/game/${gameId}`;
+
+  useEffect(() => {
+    const loaded = loadSeat(gameId);
+    setIdentity(loaded);
+    setSeat(loaded?.seat ?? "spectator");
+  }, [gameId]);
 
   useEffect(() => {
     fetchGame(gameId).then(setSnapshot).catch((error) => setError(error instanceof Error ? error.message : "Could not load game."));
   }, [gameId]);
 
   useEffect(() => {
-    const token = storedSeat?.playerToken;
+    const token = identity?.playerToken;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const query = token ? `?playerToken=${encodeURIComponent(token)}` : "";
     const socket = new WebSocket(`${protocol}://${window.location.host}/ws/games/${gameId}${query}`);
@@ -117,7 +129,15 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
     };
 
     return () => socket.close();
-  }, [gameId, storedSeat?.playerToken]);
+  }, [gameId, identity?.playerToken]);
+
+  useEffect(() => {
+    if (!snapshot?.timeControlSeconds || snapshot.status !== "active") {
+      return;
+    }
+    const interval = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(interval);
+  }, [snapshot?.status, snapshot?.timeControlSeconds]);
 
   const board = snapshot ? getBoard(snapshot, seat) : [];
   const blackSeatTaken = snapshot?.players.some((player) => player.seat === "black") ?? false;
@@ -130,10 +150,10 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
     try {
       const joined = await joinGame(gameId, joinName);
       saveSeat(gameId, joined.seat, joined.playerToken);
+      setIdentity({ seat: joined.seat, playerToken: joined.playerToken });
       setSeat(joined.seat);
       setSnapshot(joined.snapshot);
       window.history.replaceState(null, "", playerGamePath(gameId, joined.seat, joined.playerToken));
-      window.location.reload();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not join game.");
     }
@@ -178,8 +198,8 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
   }
 
   async function resign() {
-    if (!storedSeat?.playerToken) return;
-    const resigned = await resignGame(gameId, storedSeat.playerToken);
+    if (!identity?.playerToken) return;
+    const resigned = await resignGame(gameId, identity.playerToken);
     setSnapshot(resigned);
   }
 
@@ -190,7 +210,7 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
   return (
     <main className="game-shell">
       <section className="player-strip top">
-        <PlayerCard snapshot={snapshot} seat="black" />
+        <PlayerCard now={now} snapshot={snapshot} seat="black" />
         <div className="status-pill">{statusText(snapshot)}</div>
       </section>
 
@@ -260,7 +280,7 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
       </section>
 
       <section className="player-strip bottom">
-        <PlayerCard snapshot={snapshot} seat="white" />
+        <PlayerCard now={now} snapshot={snapshot} seat="white" />
       </section>
 
       {pendingPromotion ? (
@@ -281,8 +301,9 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
   );
 }
 
-function PlayerCard({ snapshot, seat }: { snapshot: GameSnapshot; seat: Seat }) {
+function PlayerCard({ now, snapshot, seat }: { now: number; snapshot: GameSnapshot; seat: Seat }) {
   const player = snapshot.players.find((candidate) => candidate.seat === seat);
+  const clock = displayClock(snapshot, seat, now);
   return (
     <div className="player-card">
       <span className={`connection ${player?.connected ? "online" : ""}`} />
@@ -290,8 +311,18 @@ function PlayerCard({ snapshot, seat }: { snapshot: GameSnapshot; seat: Seat }) 
         <strong>{playerName(snapshot, seat)}</strong>
         <p>{seat === "white" ? "White" : "Black"}</p>
       </div>
+      {clock !== null ? <span className={`clock ${snapshot.turn === seat && snapshot.status === "active" ? "active" : ""}`}>{clockText(clock)}</span> : null}
     </div>
   );
+}
+
+function displayClock(snapshot: GameSnapshot, seat: Seat, now: number): number | null {
+  const baseClock = snapshot.clocks[seat];
+  if (baseClock === null) return null;
+  if (snapshot.status !== "active" || snapshot.turn !== seat || !snapshot.turnStartedAt) {
+    return baseClock;
+  }
+  return Math.max(0, baseClock - Math.max(0, now - new Date(snapshot.turnStartedAt).getTime()));
 }
 
 function currentRoute(): Route {

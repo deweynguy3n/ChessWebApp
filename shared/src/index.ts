@@ -1,5 +1,5 @@
 export type Seat = "white" | "black";
-export type GameStatus = "waiting" | "active" | "checkmate" | "stalemate" | "draw" | "resigned";
+export type GameStatus = "waiting" | "active" | "checkmate" | "stalemate" | "draw" | "resigned" | "timeout";
 export type GameResult = "1-0" | "0-1" | "1/2-1/2" | null;
 export type PromotionPiece = "q" | "r" | "b" | "n";
 
@@ -33,6 +33,9 @@ export interface GameSnapshot {
   pgn: string;
   turn: Seat;
   result: GameResult;
+  timeControlSeconds: number | null;
+  clocks: Record<Seat, number | null>;
+  turnStartedAt: string | null;
   players: PlayerSummary[];
   moves: MoveSummary[];
   captured: CapturedPieces;
@@ -42,6 +45,7 @@ export interface GameSnapshot {
 
 export interface CreateGameRequest {
   displayName: string;
+  timeControlSeconds?: number | null;
 }
 
 export interface JoinGameRequest {

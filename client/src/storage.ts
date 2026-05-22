@@ -1,6 +1,6 @@
 import type { Seat } from "@chesswebapp/shared";
 
-interface StoredSeat {
+export interface StoredSeat {
   seat: Seat;
   playerToken: string;
 }

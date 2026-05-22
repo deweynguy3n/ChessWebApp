@@ -11,6 +11,10 @@ interface DbGameRow {
   pgn: string;
   turn: Seat;
   result: GameResult;
+  time_control_seconds: number | null;
+  white_ms_remaining: number | null;
+  black_ms_remaining: number | null;
+  turn_started_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -47,8 +51,11 @@ export class PostgresGameRepository implements GameRepository {
     await this.pool.query("BEGIN");
     try {
       await this.pool.query(
-        `INSERT INTO games (id, status, fen, pgn, turn, result, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO games (
+          id, status, fen, pgn, turn, result, time_control_seconds,
+          white_ms_remaining, black_ms_remaining, turn_started_at, created_at, updated_at
+        )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           input.game.id,
           input.game.status,
@@ -56,6 +63,10 @@ export class PostgresGameRepository implements GameRepository {
           input.game.pgn,
           input.game.turn,
           input.game.result,
+          input.game.timeControlSeconds,
+          input.game.whiteMsRemaining,
+          input.game.blackMsRemaining,
+          input.game.turnStartedAt,
           input.game.createdAt,
           input.game.updatedAt
         ]
@@ -77,7 +88,7 @@ export class PostgresGameRepository implements GameRepository {
     await this.pool.query("BEGIN");
     try {
       await this.insertPlayer(input.player);
-      await this.pool.query("UPDATE games SET status = $1, updated_at = now() WHERE id = $2", [input.status, input.gameId]);
+      await this.pool.query("UPDATE games SET status = $1, turn_started_at = CASE WHEN time_control_seconds IS NULL THEN NULL ELSE now() END, updated_at = now() WHERE id = $2", [input.status, input.gameId]);
       await this.pool.query("COMMIT");
       return this.mustGetGame(input.gameId);
     } catch (error) {
@@ -106,8 +117,22 @@ export class PostgresGameRepository implements GameRepository {
         ]
       );
       await this.pool.query(
-        "UPDATE games SET fen = $1, pgn = $2, turn = $3, status = $4, result = $5, updated_at = now() WHERE id = $6",
-        [input.fen, input.pgn, input.turn, input.status, input.result, input.gameId]
+        `UPDATE games
+         SET fen = $1, pgn = $2, turn = $3, status = $4, result = $5,
+             white_ms_remaining = $6, black_ms_remaining = $7, turn_started_at = $8,
+             updated_at = now()
+         WHERE id = $9`,
+        [
+          input.fen,
+          input.pgn,
+          input.turn,
+          input.status,
+          input.result,
+          input.whiteMsRemaining,
+          input.blackMsRemaining,
+          input.turnStartedAt,
+          input.gameId
+        ]
       );
       await this.pool.query("COMMIT");
       return this.mustGetGame(input.gameId);
@@ -117,8 +142,8 @@ export class PostgresGameRepository implements GameRepository {
     }
   }
 
-  async resignGame(gameId: string, status: GameStatus, result: GameResult): Promise<GameRecord> {
-    await this.pool.query("UPDATE games SET status = $1, result = $2, updated_at = now() WHERE id = $3", [status, result, gameId]);
+  async finishGame(gameId: string, status: GameStatus, result: GameResult): Promise<GameRecord> {
+    await this.pool.query("UPDATE games SET status = $1, result = $2, turn_started_at = NULL, updated_at = now() WHERE id = $3", [status, result, gameId]);
     return this.mustGetGame(gameId);
   }
 
@@ -168,6 +193,10 @@ function toGame(row: DbGameRow): StoredGame {
     pgn: row.pgn,
     turn: row.turn,
     result: row.result,
+    timeControlSeconds: row.time_control_seconds,
+    whiteMsRemaining: row.white_ms_remaining,
+    blackMsRemaining: row.black_ms_remaining,
+    turnStartedAt: row.turn_started_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };

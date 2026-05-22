@@ -25,6 +25,7 @@ export class InMemoryGameRepository implements GameRepository {
     }
     record.players.push(input.player);
     record.game.status = input.status;
+    record.game.turnStartedAt = record.game.timeControlSeconds ? new Date().toISOString() : null;
     record.game.updatedAt = new Date().toISOString();
     return structuredClone(record);
   }
@@ -37,14 +38,18 @@ export class InMemoryGameRepository implements GameRepository {
     record.game.turn = input.turn;
     record.game.status = input.status;
     record.game.result = input.result;
+    record.game.whiteMsRemaining = input.whiteMsRemaining;
+    record.game.blackMsRemaining = input.blackMsRemaining;
+    record.game.turnStartedAt = input.turnStartedAt;
     record.game.updatedAt = new Date().toISOString();
     return structuredClone(record);
   }
 
-  async resignGame(gameId: string, status: "resigned", result: "1-0" | "0-1"): Promise<GameRecord> {
+  async finishGame(gameId: string, status: "resigned" | "timeout", result: "1-0" | "0-1"): Promise<GameRecord> {
     const record = this.mustGet(gameId);
     record.game.status = status;
     record.game.result = result;
+    record.game.turnStartedAt = null;
     record.game.updatedAt = new Date().toISOString();
     return structuredClone(record);
   }

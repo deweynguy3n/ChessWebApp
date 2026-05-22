@@ -2,12 +2,12 @@ import { Chess, type Square } from "chess.js";
 import type { GameSnapshot, PromotionPiece, Seat } from "@chesswebapp/shared";
 
 export const pieceSymbols: Record<string, string> = {
-  wp: "♙",
-  wn: "♘",
-  wb: "♗",
-  wr: "♖",
-  wq: "♕",
-  wk: "♔",
+  wp: "♟",
+  wn: "♞",
+  wb: "♝",
+  wr: "♜",
+  wq: "♛",
+  wk: "♚",
   bp: "♟",
   bn: "♞",
   bb: "♝",
@@ -50,7 +50,16 @@ export function statusText(snapshot: GameSnapshot): string {
   if (snapshot.status === "stalemate") return "Stalemate";
   if (snapshot.status === "draw") return "Draw";
   if (snapshot.status === "resigned") return `Resigned ${snapshot.result ?? ""}`;
+  if (snapshot.status === "timeout") return `Timeout ${snapshot.result ?? ""}`;
   return snapshot.status;
+}
+
+export function clockText(milliseconds: number | null): string {
+  if (milliseconds === null) return "--";
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 export function playerName(snapshot: GameSnapshot, seat: Seat): string {

@@ -18,6 +18,7 @@ export function buildApp(repository: GameRepository): FastifyInstance {
   const service = new GameService(repository);
   const connections = new Set<Connection>();
   const webSocketServer = new WebSocketServer({ noServer: true });
+  const timeoutTimers = new Map<string, NodeJS.Timeout>();
 
   app.server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "", "http://localhost");
@@ -36,16 +37,20 @@ export function buildApp(repository: GameRepository): FastifyInstance {
     for (const connection of connections) {
       connection.socket.close();
     }
+    for (const timer of timeoutTimers.values()) {
+      clearTimeout(timer);
+    }
     webSocketServer.close();
   });
 
-  app.post<{ Body: { displayName?: string } }>("/api/games", async (request, reply) => {
-    const created = await service.createGame(request.body.displayName ?? "");
+  app.post<{ Body: { displayName?: string; timeControlSeconds?: number | null } }>("/api/games", async (request, reply) => {
+    const created = await service.createGame(request.body.displayName ?? "", request.body.timeControlSeconds);
     return reply.code(201).send(created);
   });
 
   app.post<{ Params: { gameId: string }; Body: { displayName?: string } }>("/api/games/:gameId/join", async (request) => {
     const joined = await service.joinGame(request.params.gameId, request.body.displayName ?? "");
+    scheduleTimeout(request.params.gameId, joined.snapshot);
     await broadcast(request.params.gameId, { type: "player:joined", snapshot: await snapshotWithConnections(request.params.gameId) });
     return joined;
   });
@@ -73,6 +78,7 @@ export function buildApp(repository: GameRepository): FastifyInstance {
         }
 
         const result = await service.submitMove(gameId, playerToken, message.from, message.to, message.promotion);
+        scheduleTimeout(gameId, result.snapshot);
         await broadcast(gameId, { type: "move:accepted", snapshot: await snapshotWithConnections(gameId), move: result.move });
         if (result.snapshot.status !== "active") {
           await broadcast(gameId, { type: "game:ended", snapshot: await snapshotWithConnections(gameId) });
@@ -122,7 +128,9 @@ export function buildApp(repository: GameRepository): FastifyInstance {
   }
 
   async function snapshotWithConnections(gameId: string) {
-    return service.getSnapshot(gameId, connectedSeats(gameId));
+    const snapshot = await service.getSnapshot(gameId, connectedSeats(gameId));
+    scheduleTimeout(gameId, snapshot);
+    return snapshot;
   }
 
   function connectedSeats(gameId: string): Set<Seat> {
@@ -150,6 +158,36 @@ export function buildApp(repository: GameRepository): FastifyInstance {
       if (connection.gameId === gameId && connection.socket.readyState === WebSocket.OPEN) {
         send(connection.socket, { type: "game:snapshot", snapshot, seat: connection.seat });
       }
+    }
+  }
+
+  function scheduleTimeout(gameId: string, snapshot: { status: string; turn: Seat; clocks: Record<Seat, number | null> }): void {
+    const existing = timeoutTimers.get(gameId);
+    if (existing) {
+      clearTimeout(existing);
+      timeoutTimers.delete(gameId);
+    }
+    if (snapshot.status !== "active") {
+      return;
+    }
+
+    const remaining = snapshot.clocks[snapshot.turn];
+    if (remaining === null) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void handleTimeout(gameId);
+    }, Math.max(0, remaining) + 25);
+    timeoutTimers.set(gameId, timer);
+  }
+
+  async function handleTimeout(gameId: string): Promise<void> {
+    timeoutTimers.delete(gameId);
+    const snapshot = await service.timeout(gameId);
+    if (snapshot) {
+      await broadcast(gameId, { type: "game:ended", snapshot });
+      await broadcastSnapshots(gameId);
     }
   }
 
