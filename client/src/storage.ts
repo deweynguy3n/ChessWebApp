@@ -8,7 +8,6 @@ interface StoredSeat {
 export function saveSeat(gameId: string, seat: Seat, playerToken: string): void {
   const value = JSON.stringify({ seat, playerToken });
   sessionStorage.setItem(key(gameId), value);
-  localStorage.setItem(key(gameId), value);
 }
 
 export function loadSeat(gameId: string): StoredSeat | null {

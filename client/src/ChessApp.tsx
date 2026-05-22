@@ -93,6 +93,9 @@ function GameView({ gameId, onNavigate }: { gameId: string; onNavigate: (path: s
     socketRef.current = socket;
 
     socket.onmessage = (event) => {
+      if (socketRef.current !== socket) {
+        return;
+      }
       const message = JSON.parse(event.data) as ServerWsMessage;
       if ("snapshot" in message) {
         setSnapshot(message.snapshot);
