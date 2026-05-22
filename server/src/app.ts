@@ -84,7 +84,7 @@ export function buildApp(repository: GameRepository): FastifyInstance {
 
     socket.on("close", async () => {
       connections.delete(connection);
-      await broadcast(gameId, { type: "game:snapshot", snapshot: await snapshotWithConnections(gameId), seat: connection.seat });
+      await broadcastSnapshots(gameId);
     });
 
     void initializeConnection();
@@ -140,6 +140,15 @@ export function buildApp(repository: GameRepository): FastifyInstance {
     for (const connection of connections) {
       if (connection.gameId === gameId && connection.socket.readyState === WebSocket.OPEN) {
         connection.socket.send(data);
+      }
+    }
+  }
+
+  async function broadcastSnapshots(gameId: string): Promise<void> {
+    const snapshot = await snapshotWithConnections(gameId);
+    for (const connection of connections) {
+      if (connection.gameId === gameId && connection.socket.readyState === WebSocket.OPEN) {
+        send(connection.socket, { type: "game:snapshot", snapshot, seat: connection.seat });
       }
     }
   }

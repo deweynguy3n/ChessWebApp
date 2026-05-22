@@ -75,6 +75,30 @@ describe("WebSocket API", () => {
     whiteSocket.close();
     blackSocket.close();
   });
+
+  it("does not overwrite another connection seat when a socket closes", async () => {
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const created = await createViaHttp(address, "Ada");
+    await joinViaHttp(address, created.gameId, "Grace");
+
+    const whiteSocket = new WebSocket(`${address.replace("http", "ws")}/ws/games/${created.gameId}?playerToken=${created.playerToken}`);
+    const spectatorSocket = new WebSocket(`${address.replace("http", "ws")}/ws/games/${created.gameId}`);
+
+    const whiteSnapshot = nextMessage(whiteSocket);
+    const spectatorSnapshot = nextMessage(spectatorSocket);
+    await Promise.all([opened(whiteSocket), opened(spectatorSocket)]);
+
+    expect((await whiteSnapshot).type).toBe("game:snapshot");
+    expect((await spectatorSnapshot).type).toBe("game:snapshot");
+
+    const whiteUpdatePromise = waitFor(whiteSocket, "game:snapshot");
+    spectatorSocket.close();
+    const whiteUpdate = await whiteUpdatePromise;
+
+    expect(whiteUpdate.seat).toBe("white");
+
+    whiteSocket.close();
+  });
 });
 
 async function createViaHttp(address: string, displayName: string): Promise<CreateGameResponse> {
