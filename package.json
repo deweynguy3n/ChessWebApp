@@ -1,0 +1,41 @@
+{
+  "name": "chess-webapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "dev:server": "npm run dev -w server",
+    "build": "npm run build -w shared && npm run build -w client && npm run build -w server",
+    "test": "npm run test -w server",
+    "typecheck": "npm run build -w shared && npm run typecheck -w client && npm run typecheck -w server",
+    "migrate": "npm run migrate -w server"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.1.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4",
+    "vitest": "^4.0.13"
+  },
+  "dependencies": {
+    "@fastify/static": "^8.3.0",
+    "chess.js": "^1.4.0",
+    "fastify": "^5.6.2",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "ws": "^8.18.3"
+  }
+}
